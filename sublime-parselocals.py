@@ -29,6 +29,9 @@ class ParselocalsCommand(sublime_plugin.TextCommand):
 			elif itemClassName == "Procedure":
 				self.output("@proc : " + item.name)
 				self.output("@length : " + str(item.endLine - item.beginLine))
+			elif itemClassName == "Function":
+				self.output("@func : " + item.name)
+				self.output("@length : " + str(item.endLine - item.beginLine))
 
 	def parse(self, line):
 		rule = "(?i)^DEFINE CLASS\s"
@@ -80,6 +83,24 @@ class ParselocalsCommand(sublime_plugin.TextCommand):
 			self.active_method = len(self.datas) - 1
 			return
 
+		rule = "(?i)^FUNCTION\s"
+		match = re.match(rule, line)
+		if match:
+			# we get rid of function declaration
+			string = re.sub(rule, "", line)
+			# we create a new function object
+			funcObj = Function()
+			# we save begin line number
+			funcObj.beginLine = self.active_line
+			# we look for the name of the function
+			match = re.match("\w*", string)
+			if match:
+				funcObj.name = match.group(0)
+			# we push our function object and save the index
+			self.datas.append(funcObj)
+			self.active_method = len(self.datas) - 1
+			return
+
 		rule = "(?i)^ENDPROC$"
 		match = re.match(rule, line)
 		if match:
@@ -87,6 +108,15 @@ class ParselocalsCommand(sublime_plugin.TextCommand):
 			procObj = self.datas[self.active_method]
 			# we save end line number
 			procObj.endLine = self.active_line
+			return
+
+		rule = "(?i)^ENDFUNC$"
+		match = re.match(rule, line)
+		if match:
+			# we get our active function object
+			funcObj = self.datas[self.active_method]
+			# we save end line number
+			funcObj.endLine = self.active_line
 			return
 
 class Class:
@@ -97,6 +127,12 @@ class Class:
 	properties = []
 
 class Procedure:
+	name = ""
+	beginLine = 0
+	endLine = 0
+	parameters = []
+
+class Function:
 	name = ""
 	beginLine = 0
 	endLine = 0
