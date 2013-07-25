@@ -19,22 +19,37 @@ class ParselocalsCommand(sublime_plugin.TextCommand):
 			for line in text.split('\n'):
 				self.active_line = self.active_line + 1
 				self.parse(line)
+		self.report()
+
+	def report(self):
+		classes = 0
+		procs = 0
+		funcs = 0
 		for item in self.datas:
 			itemClassName = item.__class__.__name__
-			self.output("##############################")
 			if itemClassName == "Class":
-				self.output("@class : " + item.name)
-				self.output("@parent : " + item.parent)
-				self.output("@length : " + str(item.endLine - item.beginLine))
+				classes = classes + 1
+				# self.output("@class : " + item.name)
+				# self.output("@parent : " + item.parent)
+				# self.output("@length : " + str(item.endLine - item.beginLine))
 			elif itemClassName == "Procedure":
-				self.output("@proc : " + item.name)
-				self.output("@length : " + str(item.endLine - item.beginLine))
+				procs = procs + 1
+				# self.output("@proc : " + item.name)
+				# self.output("@length : " + str(item.endLine - item.beginLine))
 			elif itemClassName == "Function":
-				self.output("@func : " + item.name)
-				self.output("@length : " + str(item.endLine - item.beginLine))
+				funcs = funcs + 1
+				# self.output("@func : " + item.name)
+				# self.output("@length : " + str(item.endLine - item.beginLine))
+		self.output(((classes == 2) and (procs == 16) and (funcs == 0)))
 
 	def parse(self, line):
-		rule = "(?i)^DEFINE CLASS\s"
+		rule = "^(\&&)|(\*)"
+		match = re.match(rule, line)
+		if match:
+			# this is a comment
+			return
+
+		rule = "(?i)(^DEFINE +CLASS)\s"
 		match = re.match(rule, line)
 		if match:
 			# we get rid of class declaration
@@ -65,7 +80,7 @@ class ParselocalsCommand(sublime_plugin.TextCommand):
 			classObj.endLine = self.active_line
 			return
 
-		rule = "(?i)^PROCEDURE\s"
+		rule = "(?i)(PROTECTED )?(HIDDEN )?(PROC(?:EDURE)?)\s"
 		match = re.match(rule, line)
 		if match:
 			# we get rid of procedure declaration
@@ -83,7 +98,7 @@ class ParselocalsCommand(sublime_plugin.TextCommand):
 			self.active_method = len(self.datas) - 1
 			return
 
-		rule = "(?i)^FUNCTION\s"
+		rule = "(?i)(PROTECTED )?(HIDDEN )?(FUNC(?:TION)?)\s"
 		match = re.match(rule, line)
 		if match:
 			# we get rid of function declaration
