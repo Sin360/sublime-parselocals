@@ -2,7 +2,8 @@ import sublime, sublime_plugin, re
 
 class ParselocalsCommand(sublime_plugin.TextCommand):
 
-	def init(self):
+	def __init__(self, view):
+		sublime_plugin.TextCommand.__init__(self, view)
 		self.active_class = 0
 		self.active_line = 0
 		self.active_method = 0
@@ -12,8 +13,6 @@ class ParselocalsCommand(sublime_plugin.TextCommand):
 		print(message)
 
 	def run(self, view):
-		# we initialize global variables
-		self.init()
 		sels = self.view.sel()
 		# loop through selections
 		for sel in sels:
@@ -21,7 +20,8 @@ class ParselocalsCommand(sublime_plugin.TextCommand):
 			# parse each line
 			for line in text.split('\n'):
 				self.active_line = self.active_line + 1
-				self.parse(line.strip())
+				line = line.strip()
+				self.parse(line)
 		self.report()
 
 	def parse(self, line):
@@ -65,6 +65,9 @@ class ParselocalsCommand(sublime_plugin.TextCommand):
 		rule = "(?i)^(PROTECTED )?(HIDDEN )?(PROC(?:EDURE)?)\s"
 		match = re.search(rule, line)
 		if match:
+			# we set end of previous active method
+			self.setEndOfMethod(self.active_line - 1)
+
 			# we get rid of procedure declaration
 			string = re.sub(rule, "", line)
 			# we create a new procedure object
@@ -101,19 +104,15 @@ class ParselocalsCommand(sublime_plugin.TextCommand):
 		rule = "(?i)^ENDPROC"
 		match = re.search(rule, line)
 		if match:
-			# we get our active procedure object
-			procObj = self.datas[self.active_method]
 			# we save end line number
-			procObj.endLine = self.active_line
+			self.setEndOfMethod(self.active_line)
 			return
 
 		rule = "(?i)^ENDFUNC"
 		match = re.search(rule, line)
 		if match:
-			# we get our active function object
-			funcObj = self.datas[self.active_method]
 			# we save end line number
-			funcObj.endLine = self.active_line
+			self.setEndOfMethod(self.active_line)
 			return
 
 		rule = "(?i)^(?:L)?PARAMETERS"
@@ -125,7 +124,7 @@ class ParselocalsCommand(sublime_plugin.TextCommand):
 			string = re.sub(rule, "", line)
 			params = string.strip()
 			# we split each parameter
-			params = string.split(', ')
+			params = string.split(',')
 			for param in params:
 				methObj.parameters.append(param.strip())
 			return
@@ -139,10 +138,64 @@ class ParselocalsCommand(sublime_plugin.TextCommand):
 			string = re.sub(rule, "", line)
 			variables = string.strip()
 			# we split each variable
-			variables = string.split(', ')
+			variables = string.split(',')
 			for variable in variables:
 				methObj.variables.append(variable.strip())
 			return
+
+		rule = "(?i)^IF"
+		match = re.search(rule, line)
+		if match:
+			# if statement
+			return
+
+		rule = "\="
+		match = re.search(rule, line)
+		if match:
+			# this is an assignment
+			# we get rid of egal sign and what comes right after
+			string = line.split("=")[0].strip()
+			self.assign(string)
+			return
+
+		rule = "$;"
+		match = re.match(rule, line)
+		if match:
+			# this is a multi line statement
+			self.output("multiline statement")
+			return
+
+	def assign(self, line):
+		rule = "(?i)THIS(?:FORM)?."
+		match = re.search(rule, line)
+		if match:
+			string = re.sub(rule, "", line)
+			self.addUsedProp(string.split(".")[0])
+			return
+
+		rule = "(?i)M."
+		match = re.search(rule, line)
+		if match:
+			string = re.sub(rule, "", line)
+			self.addUsedVar(string)
+			return
+
+	def addUsedProp(self, prop):
+		# we get our active class object
+		classObj = self.datas[self.active_class]
+		# we add our property
+		classObj.addProperty(prop)
+
+	def addUsedVar(self, var):
+		# we get our active method object
+		methObj = self.datas[self.active_method]
+		# we add our variable
+		methObj.addVariable(var)
+
+	def setEndOfMethod(self, lineNumber):
+		methObj = self.datas[self.active_method]
+		if methObj.endLine:
+			methObj.endLine = lineNumber
 
 	def report(self):
 		classes = 0
@@ -155,6 +208,9 @@ class ParselocalsCommand(sublime_plugin.TextCommand):
 				self.output("@class : " + item.name)
 				self.output("@parent : " + item.parent)
 				self.output("@length : " + str(item.endLine - item.beginLine))
+				self.output("@properties : " + str(len(item.properties)))
+				for prop in item.properties:
+					self.output("@property : " + prop)
 			elif itemClassName == "Procedure":
 				procs = procs + 1
 				self.output("@proc : " + item.name)
@@ -175,12 +231,10 @@ class ParselocalsCommand(sublime_plugin.TextCommand):
 					self.output("@param : " + param)
 				for variable in item.variables:
 					self.output("@variable : " + variable)
-		# self.output(str(classes) + " classes")
-		# self.output(str(procs) + " procs")
-		# self.output(str(funcs) + " funcs")
-		# # self.output(((classes == 2) and (procs == 16) and (funcs == 0)))
+		# self.output(((classes == 2) and (procs == 16) and (funcs == 0)))
 
 class Class:
+
 	def __init__(self):
 		self.name = ""
 		self.parent = ""
@@ -188,7 +242,12 @@ class Class:
 		self.endLine = 0
 		self.properties = []
 
-class Procedure:
+	def addProperty(self, prop):
+		if prop not in self.properties:
+			self.properties.append(prop)
+
+class Method:
+
 	def __init__(self):
 		self.name = ""
 		self.beginLine = 0
@@ -196,10 +255,20 @@ class Procedure:
 		self.variables = []
 		self.parameters = []
 
-class Function:
+	def addVariable(self, var):
+		if var not in self.variables:
+			self.variables.append(var)
+
+	def addParameter(self, param):
+		if param not in self.parameters:
+			self.parameters.append(param)
+
+class Procedure(Method):
+
 	def __init__(self):
-		self.name = ""
-		self.beginLine = 0
-		self.endLine = 0
-		self.variables = []
-		self.parameters = []
+		Method.__init__(self)
+
+class Function(Method):
+
+	def __init__(self):
+		Method.__init__(self)
